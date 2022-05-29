@@ -39,12 +39,14 @@ final _defaultMimeTypeResolver = MimeTypeResolver();
 ///
 /// Specify a custom [contentTypeResolver] to customize automatic content type
 /// detection.
-Handler createStaticHandler(String fileSystemPath,
-    {bool serveFilesOutsidePath = false,
-    String? defaultDocument,
-    bool listDirectories = false,
-    bool useHeaderBytesForContentType = false,
-    MimeTypeResolver? contentTypeResolver}) {
+Handler createStaticHandler(
+  String fileSystemPath, {
+  bool serveFilesOutsidePath = false,
+  String? defaultDocument,
+  bool listDirectories = false,
+  bool useHeaderBytesForContentType = false,
+  MimeTypeResolver? contentTypeResolver,
+}) {
   final rootDir = Directory(fileSystemPath);
   if (!rootDir.existsSync()) {
     throw ArgumentError('A directory corresponding to fileSystemPath '
@@ -103,20 +105,24 @@ Handler createStaticHandler(String fileSystemPath,
       return _redirectToAddTrailingSlash(uri);
     }
 
-    return _handleFile(request, file, () async {
-      if (useHeaderBytesForContentType) {
-        final length =
-            math.min(mimeResolver.magicNumbersMaxLength, file.lengthSync());
+    return _handleFile(
+      request,
+      file,
+      () async {
+        if (useHeaderBytesForContentType) {
+          final length =
+              math.min(mimeResolver.magicNumbersMaxLength, file.lengthSync());
 
-        final byteSink = ByteAccumulatorSink();
+          final byteSink = ByteAccumulatorSink();
 
-        await file.openRead(0, length).listen(byteSink.add).asFuture<void>();
+          await file.openRead(0, length).listen(byteSink.add).asFuture<void>();
 
-        return mimeResolver.lookup(file.path, headerBytes: byteSink.bytes);
-      } else {
-        return mimeResolver.lookup(file.path);
-      }
-    });
+          return mimeResolver.lookup(file.path, headerBytes: byteSink.bytes);
+        } else {
+          return mimeResolver.lookup(file.path);
+        }
+      },
+    );
   };
 }
 
@@ -161,7 +167,10 @@ Handler createFileHandler(String path, {String? url, String? contentType}) {
   } else if (url != null && !p.url.isRelative(url)) {
     throw ArgumentError.value(url, 'url', 'must be relative.');
   }
-
+  _defaultMimeTypeResolver.addExtension(
+    'tgz',
+    'application/zip',
+  );
   final mimeType = contentType ?? _defaultMimeTypeResolver.lookup(path);
   url ??= p.toUri(p.basename(path)).toString();
 
@@ -193,7 +202,15 @@ Future<Response> _handleFile(Request request, File file,
     HttpHeaders.lastModifiedHeader: formatHttpDate(stat.modified),
     HttpHeaders.acceptRangesHeader: 'bytes',
     if (contentType != null) HttpHeaders.contentTypeHeader: contentType,
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': '*',
+    'Access-Control-Allow-Methods': '*',
+    'Access-Control-Allow-Credentials': 'true',
   };
+  if (request.url.queryParameters['download'] == 'true') {
+    headers['Content-Disposition'] =
+        'attachment;filename=${p.toUri(p.basename(file.path))}';
+  }
 
   return _fileRangeResponse(request, file, headers) ??
       Response.ok(
